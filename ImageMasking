@@ -1,0 +1,149 @@
+@Composable
+fun ImageMasking(
+    modifier: Modifier = Modifier,
+    image: String,
+    onMaskingDone: (Bitmap) -> Unit,
+    brushSize: Dp = 30.dp,
+    showBrush: Boolean
+) {
+    var path by remember { mutableStateOf(Path()) }
+    var currentPosition by remember { mutableStateOf(Offset.Unspecified) }
+    var canvasSize by remember { mutableStateOf(IntSize(0, 0)) }
+    val scope = rememberCoroutineScope()
+    var thumbPressed by remember { mutableStateOf(false) }
+    val density = LocalDensity.current
+
+    Box(
+        modifier
+            .aspectRatio(1f)
+            .background(Color.Red)
+    ) {
+        AsyncImage(
+            model = image,
+            contentDescription = "",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .clipToBounds()
+                .onGloballyPositioned { cords -> canvasSize = cords.size }
+                .pointerInput(true) {
+                    detectDragGestures(
+                        onDragStart = { offset ->
+                            path.moveTo(offset.x, offset.y)
+                            currentPosition = offset
+                        },
+                        onDrag = { change, _ ->
+                            path.lineTo(change.position.x, change.position.y)
+                            currentPosition = change.position
+                        },
+                        onDragEnd = {
+                            thumbPressed = false
+                            scope
+                                .launch {
+                                    onMaskingDone(
+                                        path.createBitmap(
+                                            canvasSize.width,
+                                            canvasSize.height,
+                                            brushSize.toPx()
+                                        )
+                                    )
+                                }
+                                .invokeOnCompletion {
+                                    path = Path()
+                                    currentPosition = Offset.Unspecified
+                                }
+                        },
+                        onDragCancel = {}
+                    )
+                }
+                .pointerInput(true) {
+                    detectMotionEvents(
+                        onDown = {
+                            currentPosition = it.position
+                            thumbPressed = true
+                        },
+                        onUp = { thumbPressed = false }
+                    )
+                }
+        ) {
+            if (currentPosition != Offset.Unspecified) {
+                drawPath(
+                    path = path,
+                    color = Color.Magenta.copy(0.3f),
+                    style = Stroke(
+                        width = brushSize.toPx(),
+                        cap = StrokeCap.Round,
+                        join = StrokeJoin.Round
+                    )
+                )
+            }
+        }
+        if (showBrush || thumbPressed)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(brushSize)
+                    .offset(
+                        with(density) { currentPosition.x.toDp() } - 200.dp,
+                        with(density) { currentPosition.y.toDp() } - 200.dp)
+                    .background(color = Color.Black.copy(0.7f), shape = CircleShape)
+                    .border(
+                        width = 2.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                        shape = CircleShape
+                    )
+            ) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(8.dp)
+                        .border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outline,
+                            shape = CircleShape
+                        )
+                )
+            }
+    }
+}
+
+private fun Path.createBitmap(
+    width: Int,
+    height: Int,
+    strokeWidth: Float
+): Bitmap {
+    val bitmap = Bitmap.createBitmap(
+        width,
+        height,
+        Bitmap.Config.ARGB_8888
+    )
+
+    val canvas = android.graphics.Canvas(bitmap)
+    canvas.drawColor(android.graphics.Color.WHITE)
+
+    val paint = Paint().apply {
+        color = Color.Magenta.copy(0.3f).toArgb()
+        style = Paint.Style.STROKE
+        setStrokeWidth(strokeWidth)
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
+
+    canvas.drawPath(asAndroidPath(), paint)
+
+    return bitmap
+}
+
+@Composable
+@Preview
+fun ImageMaskingPreview() {
+    ImagineTheme {
+        ImageMasking(
+            image = "https://gratisography.com/wp-content/uploads/2024/11/gratisography-augmented-reality-800x525.jpg",
+            onMaskingDone = {}, showBrush = false
+        )
+    }
+}
